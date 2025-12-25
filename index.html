@@ -9,7 +9,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="TWB" />
-    <script src='https://unpkg.com/tesseract.js@v4.0.2/dist/tesseract.min.js'>
+    <script src='https://unpkg.com/tesseract.js@v4.0.2/dist/tesseract.min.js'></script>
+<script>
 /* === AUTO PATCH: ROZWIJANIE NOTATKI DZIENNEJ DO CAŁEGO TYGODNIA === */
 let isDailyExpanded = false;
 
@@ -90,8 +91,8 @@ function exportAllNotes() {
     a.click();
     URL.revokeObjectURL(a.href);
 }
-
 </script>
+
 
     <style>
         /* --- STYLIZACJA OGÓLNA --- */
@@ -1933,6 +1934,15 @@ document.addEventListener('deviceready', () => {
     // intentionally block app exit
   }, false);
 });
+</script>
+
+
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js");
+  });
+}
 </script>
 
 </body>
