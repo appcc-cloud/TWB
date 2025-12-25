@@ -1,0 +1,1943 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>TWB - Notatnik (z wbudowaną tabelą)</title>
+
+    <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22TWB%20Notatnik%22%2C%22short_name%22%3A%22TWB%22%2C%22display%22%3A%22standalone%22%2C%22lang%22%3A%22pl%22%2C%22start_url%22%3A%22.%2F%22%7D">
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="TWB" />
+    <script src='https://unpkg.com/tesseract.js@v4.0.2/dist/tesseract.min.js'>
+/* === AUTO PATCH: ROZWIJANIE NOTATKI DZIENNEJ DO CAŁEGO TYGODNIA === */
+let isDailyExpanded = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const dailyContainer = document.getElementById('today-daily-note-container');
+    if (!dailyContainer) return;
+
+    dailyContainer.addEventListener('click', () => {
+        isDailyExpanded = !isDailyExpanded;
+        renderDailyExpanded();
+    });
+});
+
+function renderDailyExpanded() {
+    const container = document.getElementById('today-daily-note-container');
+    if (!container) return;
+
+    if (!isDailyExpanded) {
+        renderTodayDailyNote();
+        return;
+    }
+
+    let html = '<div class="day-center-title">Tydzień</div>';
+    dayNames.forEach((day, index) => {
+        const content = dailyNotesDB[index] || 'Brak notatki.';
+        html += `
+            <div style="border-top:1px solid #777; padding:4px 0;">
+                <strong style="font-size:12px;">${day}</strong>
+                <div style="white-space:pre-wrap; font-size:13px; line-height:1.25;">
+                    ${content}
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+
+/* === AUTO PATCH: NADPISANIE renderDailyExpanded (KOMPAKT) === */
+renderDailyExpanded = function () {
+    const container = document.getElementById('today-daily-note-container');
+    if (!container) return;
+
+    if (!isDailyExpanded) {
+        renderTodayDailyNote();
+        return;
+    }
+
+    let html = '<div class="day-center-title">Tydzień</div>';
+    dayNames.forEach((day, index) => {
+        const content = dailyNotesDB[index] || '—';
+        html += `
+            <div class="week-day">
+                <strong>${day}</strong>
+                <div class="week-content">${content}</div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+};
+
+
+function exportAllNotes() {
+    const data = {
+        version: "TWB-1.0",
+        exportedAt: new Date().toISOString(),
+        notesDB,
+        dailyNotesDB,
+        quickNotesDB
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "twb-notatki.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+</script>
+
+    <style>
+        /* --- STYLIZACJA OGÓLNA --- */
+        html { height: 100%; }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #808080;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            height: 100dvh;
+            overflow: hidden;
+            overscroll-behavior: none;
+        }
+
+        /* --- PASEK TYTUŁU --- */
+        #main-title-bar {
+            flex-shrink: 0;
+            width: 100%;
+            background-color: #696969;
+            text-align: center;
+            padding-top: 15px;
+            padding-bottom: 5px;
+            z-index: 10;
+            position: relative;
+        }
+
+        /* ZMODYFIKOWANA STYLIZACJA DLA TYTUŁU PRZENIESIONEGO NA PASEK */
+        #top-bar-container #app-title-text {
+            font-size: 20px; /* ZMNIEJSZONA CZCIONKA: BYŁO 24px */
+            font-weight: 900;
+            color: #f0f0f0;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            letter-spacing: 2px;
+            margin: 0 10px; /* Dodanie marginesu */
+            text-align: center;
+            flex-grow: 1;
+            min-width: 80px;
+        }
+
+        /* --- PASEK PRZYCISKÓW --- */
+        #top-bar-container {
+            flex-shrink: 0;
+            height: auto;
+            min-height: 50px;
+            width: 100%;
+            background-color: #696969;
+            z-index: 10;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            /* ZMIENIONE: justify-content: space-between; aby przyciski były na brzegach */
+            justify-content: space-between;
+            padding: 5px 20px 15px 20px;
+            box-sizing: border-box;
+            box-shadow: 0 4px 5px rgba(0,0,0,0.2);
+            gap: 10px;
+        }
+
+        .left-buttons, .right-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+
+        button {
+            border: none;
+            padding: 8px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            border-radius: 5px;
+            color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+        button:hover { opacity: 0.9; }
+        .btn-green { background-color: #4CAF50; }
+        .btn-blue { background-color: #2196F3; }
+        .btn-orange { background-color: #FF9800; border: 1px solid white;}
+        .btn-gray { background-color: #777; font-size: 18px; padding: 5px 12px; }
+        .btn-purple { background-color: #9C27B0; }
+        .btn-phone { background-color: #4CAF50; font-size: 18px; padding: 5px 12px; }
+
+        /* USUNIĘTO: #view-all-btn */
+        #watch-btn { min-width: 0; padding: 8px 12px; font-size: 13px; text-align: center; background-color: #6d4c41; }
+        
+        /* Zmieniono na style globalne .btn-purple, aby utrzymać ten sam wygląd co w CSS dla #category-btn */
+        #category-btn {
+            background-color: #9C27B0;
+            font-size: 18px;
+            padding: 5px 12px;
+        }
+
+        /* --- NOWY PANEL KATEGORII --- */
+        #category-panel {
+            display: none;
+            flex-shrink: 0;
+            width: 100%;
+            background-color: #696969; /* Pasuje do paska tytułu */
+            padding: 10px 15px;
+            box-sizing: border-box;
+            border-bottom: 1px solid #555;
+            animation: slideDown 0.3s ease-out;
+            text-align: center;
+            box-shadow: inset 0 5px 10px -5px rgba(0,0,0,0.5);
+            position: relative;
+            z-index: 15; /* Między top-bar (10) a search-container (20) */
+        }
+
+        .category-grid {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .category-btn-large {
+            /* ZMIANA: usunięto background-color: #9C27B0; - przeniesione do klas specyficznych */
+            padding: 10px 15px;
+            font-size: 13px;
+            border: 1px solid white;
+            flex-grow: 1;
+            min-width: 120px;
+        }
+        .category-btn-large.active {
+            background-color: #6a1b9a; /* Domyślny, jeśli nie ma kategorii */
+            border: 2px solid #FFEB3B; /* Żółta ramka dla wyróżnienia */
+        }
+        
+        /* NOWE STYLY PRZYCISKÓW KATEGORII */
+        .category-btn-large.category-turbina {
+            background-color: #FF9800; /* POMARAŃCZOWY dla Turbiny */
+        }
+        .category-btn-large.category-kociol {
+            background-color: #007BFF; /* Niebieski dla Kotła */
+        }
+
+        /* Utrzymanie podświetlenia dla aktywnego stanu */
+        .category-btn-large.category-turbina.active {
+            background-color: #E68900; /* Ciemniejszy Pomarańczowy */
+            border: 2px solid #FFEB3B;
+        }
+        .category-btn-large.category-kociol.active {
+            background-color: #0056B3; /* Ciemniejszy Niebieski */
+            border: 2px solid #FFEB3B;
+        }
+        /* --- KONIEC NOWYCH STYLÓW KATEGORII --- */
+
+
+        /* --- STAŁY PANEL NOTATKI NA DZIEŃ (KOMPAKTOWY) --- */
+
+#today-daily-note-container {
+    flex-shrink: 0;
+    width: 100%;
+    background-color: #606060;
+    color: white;
+    padding: 1px 10px 2px 10px; /* ZMIENIONY PADDING: Aby notatka rozciągała się na całą szerokość */
+    box-sizing: border-box;
+    font-size: 13px;
+    line-height: 1.25;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.2);
+    z-index: 9;
+    position: relative;
+    overflow: visible;
+}
+
+
+.day-center-title {
+    display: block;
+    text-align: center;
+    font-weight: bold;
+    font-size: 11px;
+    color: #fff;
+    margin-bottom: 2px;
+    pointer-events: none;
+}
+
+
+        .note-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        #today-daily-note-container .note-content {
+    font-size: 14px;
+            flex-grow: 1;
+            white-space: pre-wrap;
+            margin: 0;
+            padding: 0; /* USUNIĘTO PADDING WEWNĘTRZNY */
+            box-sizing: border-box;
+        }
+
+        #today-daily-note-container .edit-daily-btn {
+            background-color: #FF9800;
+            font-size: 14px;
+            padding: 6px 10px;
+            min-width: 40px;
+            align-self: flex-start;
+        }
+
+        /* --- PANEL USTAWIEŃ I TYGODNIA --- */
+        #settings-panel, #week-edit-panel {
+            display: none;
+            flex-shrink: 0;
+            background-color: #555;
+            padding: 15px;
+            border-bottom: 1px solid #444;
+            animation: slideDown 0.3s ease-out;
+            text-align: center;
+            box-shadow: inset 0 5px 10px -5px rgba(0,0,0,0.5);
+            position: relative;
+            max-height: 50vh;
+            overflow-y: auto;
+        }
+
+        .day-edit-item {
+            background-color: #4a4a4a;
+            margin-bottom: 8px;
+            padding: 10px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            text-align: left;
+        }
+
+        .day-edit-item span {
+            flex-grow: 1;
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .day-edit-item .edit-btn-small {
+            background-color: #2196F3;
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        #settings-panel .panel-content {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 5px;
+        }
+
+        #copyright-text {
+            position: absolute;
+            bottom: 3px;
+            right: 8px;
+            font-size: 10px;
+            color: #aaa;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        /* --- OBSZAR WYŚWIETLANIA NOTATEK --- */
+        #display-area {
+            flex-grow: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* --- KARTA NOTATKI --- */
+        .note-card {
+            background-color: #ffffff;
+            color: #000000;
+            padding: 15px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 1000px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            animation: fadeIn 0.5s;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .note-title {
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #000000;
+            border-bottom: 2px solid #eeeeee;
+            padding-bottom: 5px;
+            width: 100%;
+        }
+
+        .note-content-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+            align-items: flex-start;
+        }
+
+        .note-text {
+            width: 100%;
+            font-size: 1rem;
+            white-space: pre-wrap;
+            color: #000000;
+            word-wrap: break-word;
+        }
+
+        .ocr-text {
+          width: 100%;
+            font-size: 0.8rem;
+            color: #555;
+            background-color: #f7f7f7;
+            padding: 8px;
+            border-radius: 5px;
+            margin-top: 5px;
+            word-wrap: break-word;
+            border-left: 3px solid #FF9800;
+            display: none; 
+        }
+
+        .tag-container { margin-top: 8px; display:flex; gap:8px; flex-wrap:wrap; }
+        .tag-chip {
+            background: #e0e0e0; 
+            color: #222;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            border: 1px solid #d0d0d0;
+        }
+
+        mark {
+            background-color: yellow;
+            color: black;
+            font-weight: bold;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+
+        .note-images {
+            flex-shrink: 0;
+            width: 100%;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-start;
+            align-content: flex-start;
+            margin-bottom: 5px;
+        }
+
+        .note-images img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+        }
+
+        .card-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+
+        .edit-btn { background-color: #2196F3; }
+        .delete-btn { background-color: #f44336; }
+
+        /* --- WYSZUKIWARKA --- */
+        #search-container {
+            flex-shrink: 0;
+            width: 100%;
+            background-color: #696969;
+            padding: 15px;
+            padding-bottom: max(15px, env(safe-area-inset-bottom));
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+            z-index: 20;
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        /* --- MODAL (WSPÓLNY STYL) --- */
+        #modal, #phone-modal, #daily-modal, #watch-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.8);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: #fff;
+            color: #333;
+            padding: 20px;
+            border-radius: 10px;
+            width: 95%;
+            max-width: 1100px; 
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .watch-modal-content {
+            background-color: #fff;
+            color: #333;
+            padding: 12px;
+            border-radius: 8px;
+            width: 98%;
+            max-width: 1100px;
+            display: block;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        #watch-close-sticky {
+            position: sticky;
+            top: 8px;
+            z-index: 200;
+            background: transparent;
+            text-align: right;
+            margin-bottom: 8px;
+        }
+
+        input[type="text"].modal-input, textarea, select.modal-input {
+            width: 100%;
+            padding: 12px; 
+            font-size: 18px; 
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        
+        select.modal-input {
+             background-color: #f9f9f9;
+        }
+
+        #quick-note-input {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            box-sizing: border-box;
+            border: 2px solid #ccc; 
+            border-radius: 4px;
+            margin-bottom: 0; 
+        }
+
+        textarea {
+            height: 350px; 
+            resize: vertical;
+            min-height: 200px; 
+        }
+
+        .close-btn { background-color: #999; }
+
+        .phone-group {
+            margin-bottom: 15px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .phone-group:last-child { border-bottom: none; }
+
+        .phone-group h3 {
+            margin: 0 0 8px 0;
+            color: #444;
+            font-size: 16px;
+            text-transform: uppercase;
+            border-left: 4px solid #4CAF50;
+            padding-left: 8px;
+        }
+
+        .phone-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .phone-call-btn {
+            background-color: #fff;
+            color: #333;
+            border: 1px solid #4CAF50;
+            padding: 10px 5px;
+            font-weight: bold;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            transition: background-color 0.2s;
+        }
+
+        .phone-call-btn:hover {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .phone-call-btn span { font-size: 20px; }
+
+        /* --- LIGHTBOX (Zoom i Pan) --- */
+        #image-viewer {
+            display: none;
+            position: fixed;
+            z-index: 500;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.95);
+            overflow: hidden;
+            touch-action: none;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #full-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            cursor: grab;
+            transition: transform 0.1s;
+            transform-origin: center center;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        #full-image:active { cursor: grabbing; }
+
+        #close-viewer-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 35px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 600;
+            user-select: none;
+        }
+
+        @keyframes slideDown {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (min-width: 501px) {
+            #search-input { width: 60%; }
+            #top-bar-container {
+                justify-content: space-between;
+            }
+            #top-bar-container #app-title-text {
+                order: 2; 
+                flex-grow: 1;
+                text-align: center;
+                margin-left: 0;
+                margin-right: 0;
+            }
+            .left-buttons {
+                order: 1; 
+                flex-shrink: 0;
+            }
+            .right-buttons {
+                order: 3; 
+                flex-shrink: 0;
+            }
+        }
+
+        @media (max-width: 600px) {
+            #top-bar-container #app-title-text {
+                font-size: 20px;
+                margin: 0 5px;
+                text-align: center;
+                flex-grow: 1;
+                order: -1; 
+                width: 100%;
+            }
+            .note-images { flex-direction: column; }
+            .note-images img {
+                width: 100%;
+                height: auto;
+                max-height: 500px;
+                margin-bottom: 5px;
+            }
+            .note-row { flex-direction: row; }
+            #top-bar-container {
+                padding: 10px 10px 15px 10px;
+                gap: 5px;
+            }
+            .left-buttons, .right-buttons {
+                gap: 5px;
+                flex-grow: 0;
+                flex-shrink: 0;
+            }
+            .left-buttons {
+                 order: 2;
+            }
+            .right-buttons {
+                 order: 3;
+            }
+        }
+
+        #edit-images-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .modal-image-item {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #f2f2f2;
+        }
+
+        .modal-image-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid #aaa;
+            display: block;
+        }
+
+        .modal-image-item .remove-img-btn {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #e53935;
+            color: white;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+        }
+
+        #today-daily-note-container .edit-daily-btn {
+            margin-top: -3mm;
+        }
+
+        #quick-note-list {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 15px 0;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+
+        .quick-note-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 10px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+            word-break: break-word;
+        }
+
+        .quick-note-item:last-child {
+            border-bottom: none;
+        }
+
+        .delete-quick-note-btn {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 5px 8px; 
+            border-radius: 4px;
+            font-size: 16px; 
+            cursor: pointer;
+            flex-shrink: 0;
+            margin-left: 10px;
+        }
+
+        .quick-note-timestamp {
+            display: block;
+            font-size: 10px;
+            color: #a0a0a0;
+            margin-top: 2px;
+            white-space: nowrap; 
+        }
+
+        #quick-note-info {
+            display: none; 
+            text-align: center;
+            font-size: 0.8em;
+            color: #ff0000;
+            margin: 5px 0 15px 0; 
+            font-weight: bold;
+        }
+
+        .quick-note-item .btn-blue {
+            margin-right: 5px;
+        }
+
+
+@media (max-width: 600px) {
+    textarea,
+    .note-text,
+#today-daily-note-container .note-content {
+    font-size: 14px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
+}
+
+
+/* === AUTO PATCH: CIENSZE SCIANKI POLA EDYCJI === */
+#modal .modal-content {
+    width: 100%;
+    max-width: none;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+#modal textarea {
+    padding: 6px;
+    border-width: 1px;
+    border-radius: 3px;
+    box-sizing: border-box;
+}
+
+
+/* === AUTO PATCH: EDYCJA JAK PODGLĄD NOTATKI === */
+#modal textarea,
+#daily-modal textarea {
+    padding: 0;
+    margin: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: normal;
+    box-shadow: none;
+    resize: vertical;
+}
+
+#modal .modal-content,
+#daily-modal .modal-content {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+
+/* === AUTO PATCH: NOTATKA GŁÓWNA TAK SZEROKA JAK EDYCJA === */
+#display-area {
+    padding-left: 10px;
+    padding-right: 10px;
+    align-items: stretch;
+}
+
+.note-card {
+    width: 100%;
+    max-width: none;
+    border-radius: 6px;
+}
+
+
+/* === AUTO PATCH: FIX POZIOMEGO PRZEWIJANIA NA TELEFONIE === */
+html, body {
+    overflow-x: hidden;
+}
+
+#display-area {
+    padding-left: 0;
+    padding-right: 0;
+    overflow-x: hidden;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.note-card {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+.note-card *,
+.note-text,
+.note-images,
+.note-title,
+.note-content-wrapper {
+    box-sizing: border-box;
+    max-width: 100%;
+}
+
+.note-images img {
+    max-width: 100%;
+    height: auto;
+}
+
+
+/* === AUTO PATCH: ZWIĘZŁA LISTA TYGODNIA (KOMPAKTOWY WIDOK) === */
+#today-daily-note-container {
+    font-size: 12px;
+    line-height: 1.15;
+}
+
+.week-day {
+    padding: 2px 0;
+    border-top: 1px solid rgba(255,255,255,0.25);
+}
+
+.week-day strong {
+    font-size: 11px;
+    display: block;
+    margin-bottom: 1px;
+}
+
+.week-content {
+    font-size: 12px;
+    line-height: 1.15;
+    white-space: pre-wrap;
+}
+
+
+/* === AUTO PATCH: JEDNAKOWY ROZMIAR IKON W MENU USTAWIEŃ === */
+#settings-panel .panel-content button {
+    width: 150px;
+    height: 44px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+#settings-panel .panel-content button::first-letter {
+    font-size: 18px;
+}
+
+</style>
+</head>
+<body>
+
+    <input type="file" id="import-file-input" style="display: none;" accept=".json" onchange="importData(this)">
+
+    <div id="main-title-bar" style="display:none;"></div>
+
+    <div id="top-bar-container">
+        <div class="left-buttons">
+            <button class="btn-gray" onclick="toggleSettings()" title="Ustawienia (Import/Eksport)">⚙️</button>
+            <button id="soup-btn" onclick="openSoupModal()" class="btn-gray" style="background-color:#444;font-size:18px;padding:5px 12px;color:white;border:none;border-radius:5px;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,0.3);">🍲</button>
+        </div>
+
+        <h1 id="app-title-text"></h1>
+
+        <div class="right-buttons">
+            <button class="btn-phone" onclick="openPhoneModal()" title="Zadzwoń">📞</button>
+            <button id="quick-note-btn" onclick="toggleQuickNoteModal()" title="Szybka notatka" class="btn-gray">⚡</button>
+            <button id="category-btn" class="btn-purple" onclick="toggleCategoryPanel()" title="Kategorie" style="font-size:18px; padding:5px 12px;">🏷️</button>
+            <button id="watch-btn" class="btn-gray" onclick="openZmianaFile()" title="Zegar / Tabela zmianowa">⏱️</button>
+        </div>
+    </div>
+
+    <div id="category-panel">
+        <div class="category-grid">
+            <button class="category-btn-large category-turbina" onclick="filterByCategory('Turbina', this)">Turbina</button>
+            <button class="category-btn-large category-turbina" onclick="filterByCategory('Turbina (obsługa)', this)">Turbina (obsługa)</button>
+            <button class="category-btn-large category-kociol" onclick="filterByCategory('Kocioł', this)">Kocioł</button>
+            <button class="category-btn-large category-kociol" onclick="filterByCategory('Kocioł (obsługa)', this)">Kocioł (obsługa)</button>
+            <button class="category-btn-large category-kociol" onclick="filterByCategory('Kocioł (poziomy)', this)">Kocioł (poziomy)</button>
+        </div>
+    </div>
+
+    <div id="today-daily-note-container"></div>
+
+    <div id="week-edit-panel"></div>
+
+    <div id="settings-panel" tabindex="0">
+        <div class="panel-content">
+            <button class="btn-blue" onclick="triggerImport()" title="Wczytaj notatki z pliku">📂 Import</button>
+            <button class="btn-blue" onclick="exportAllNotes()" title="Zapisz wszystkie notatki do pliku">💾 Zapisz notatki</button>
+            <button class="btn-orange" onclick="toggleWeekEditPanel()" title="Edytuj notatki dzienne">📝 Edytuj Dzień</button>
+            <button class="btn-green" onclick="openModalForNew()" title="Dodaj nową notatkę">➕ Nowa Notatka</button>
+        </div>
+        <div id="copyright-text">TWB (Cyprian©)</div>
+    </div>
+
+    <div id="display-area">
+        <div style="opacity: 0.5; margin-top: 100px; text-align: center;">
+            Wczytywanie notatek...
+        </div>
+    </div>
+
+    <div id="search-container">
+        <input type="text" id="search-input" placeholder="Wpisz szukaną frazę" oninput="performSearch()">
+    </div>
+
+    <div id="modal">
+        <div class="modal-content">
+            <h2 id="modal-title">Dodaj notatkę</h2>
+
+            <label>Tytuł:</label>
+            <input type="text" id="note-title" class="modal-input" placeholder="Wpisz tytuł...">
+
+            <label>Treść:</label>
+            <textarea id="note-text" placeholder="Wpisz treść..."></textarea>
+
+            <label>Kategoria (Etykieta):</label>
+            <select id="note-category-select" class="modal-input">
+                <option value="">-- Wybierz kategorię (opcjonalnie) --</option>
+                <option value="Turbina">Turbina</option>
+                <option value="Turbina (obsługa)">Turbina (obsługa)</option>
+                <option value="Kocioł">Kocioł</option>
+                <option value="Kocioł (obsługa)">Kocioł (obsługa)</option>
+                <option value="Kocioł (poziomy)">Kocioł (poziomy)</option>
+            </select>
+
+            <label>Lokalizacja:</label>
+            <input type="text" id="note-labels" class="modal-input" placeholder="np. Kocioł 5, Elektrownia (dowolny tekst)">
+
+            <label>Obecne zdjęcia / Dodaj nowe (max 6 łącznie):</label>
+            <div id="edit-images-preview"></div>
+
+            <div style="font-size: 0.8rem; color: #666;">(Tekst ze zdjęć zostanie odczytany w tle.)</div>
+            <input type="file" id="note-images" multiple accept="image/*">
+            <small style="color: red;" id="error-msg"></small>
+
+            <button class="btn-green" id="modal-save-btn" onclick="handleSave()" style="width: 100%; margin-top: 10px;">Zapisz</button>
+            <button class="close-btn" onclick="closeModal()" style="width: 100%; margin-top: 5px;">Anuluj</button>
+        </div>
+    </div>
+
+    <div id="daily-modal">
+        <div class="modal-content">
+            <h2 id="daily-modal-title" style="text-align: center; border-bottom: 1px solid #eee; padding-bottom: 10px;">Notatka na Dzień</h2>
+
+            <ul id="quick-note-list" style="display:none;"></ul>
+
+            <label id="daily-modal-label">Treść notatki:</label>
+            <textarea id="daily-note-text" placeholder="Wpisz notatkę..."></textarea>
+
+            <input type="text" id="quick-note-input" placeholder="Wpisz nową szybką notatkę..." style="display:none;">
+
+            <p id="quick-note-info">Notatka zostanie automatycznie usunięta po 8h</p>
+
+            <button class="btn-green" id="daily-modal-save-btn" onclick="handleDailyOrQuickSave()" style="width: 100%; margin-top: 10px;">Zapisz</button>
+            <button class="close-btn" onclick="closeDailyModal()" style="width: 100%; margin-top: 5px;">Anuluj</button>
+        </div>
+    </div>
+
+    <div id="watch-modal">
+        <div class="watch-modal-content" id="watch-modal-inner">
+            <div id="watch-close-sticky">
+                <button id="watch-close-btn" class="close-btn" onclick="closeWatchModal()" style="margin-bottom:0;">Zamknij</button>
+            </div>
+            <div id="embedded-table-container" style="background:#fff; color:#000; padding:8px; border-radius:6px;"></div>
+        </div>
+    </div>
+
+    <div id="phone-modal">
+        <div class="modal-content">
+            <h2 style="text-align: center; border-bottom: 1px solid #eee; padding-bottom: 10px;">Telefony</h2>
+
+            <div class="phone-group">
+                <h3>Blok 4</h3>
+                <div class="phone-grid">
+                    <button class="phone-call-btn" onclick="triggerCall('757737544')"><span>📞</span>OK4</button>
+                    <button class="phone-call-btn" onclick="triggerCall('757737534')"><span>📞</span>ONB4</button>
+                    <button class="phone-call-btn" onclick="triggerCall('757737524')"><span>📞</span>DB4</button>
+                </div>
+            </div>
+
+            <div class="phone-group">
+                <h3>Blok 5</h3>
+                <div class="phone-grid">
+                    <button class="phone-call-btn" onclick="triggerCall('757737545')"><span>📞</span>OK5</button>
+                    <button class="phone-call-btn" onclick="triggerCall('757737535')"><span>📞</span>ONB5</button>
+                    <button class="phone-call-btn" onclick="triggerCall('757737525')"><span>📞</span>DB5</button>
+                </div>
+            </div>
+
+            <div class="phone-group">
+                <h3>Blok 6</h3>
+                <div class="phone-grid">
+                    <button class="phone-call-btn" onclick="triggerCall('757737546')"><span>📞</span>OK6</button>
+                    <button class="phone-call-btn" onclick="triggerCall('757737536')"><span>📞</span>ONB6</button>
+                    <button class="phone-call-btn" onclick="triggerCall('757737526')"><span>📞</span>DB6</button>
+                </div>
+            </div>
+
+            <button class="close-btn" onclick="closePhoneModal()" style="width: 100%; margin-top: 10px;">Zamknij</button>
+        </div>
+    </div>
+
+    <div id="image-viewer">
+        <div id="close-viewer-btn" onclick="closeImageViewer()">&times;</div>
+        <img id="full-image" src="">
+    </div>
+
+<script>
+const embeddedTableHTML = `
+            <h2 style="color:#000; margin-top:0;">Tabela zmianowa</h2>
+            <div style="overflow:auto;">
+            <table style="border-collapse:collapse; width:100%; font-size:14px; color:#000; border:1px solid #555;">
+                <tr><th style="border:1px solid #555; padding:6px 8px; background:#f7f7f7; text-align:left;">data</th><td colspan="2" style="border:1px solid #555; padding:6px 8px;">Zmiana I od 6:00 do 14:00</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">K-5</th><td style="border:1px solid #555; padding:6px 8px;">W ruchu. Przyjęto zmianę. Przekazano KZB informacje<br>z poprzedniej zmiany. Przyjęto instruktaż BHP</td><td style="border:1px solid #555; padding:6px 8px;">6:15 (+15min)</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">ETD 10/20</th><td style="border:1px solid #555; padding:6px 8px;">Pobrano próbki do analizy</td><td style="border:1px solid #555; padding:6px 8px;">godz. rozp. ob.</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">HAD10</th><td style="border:1px solid #555; padding:6px 8px;">L: -180 ; P:-160 Wodoswazy szczelne</td><td style="border:1px solid #555; padding:6px 8px;">10 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">SNCR / HCB</th><td style="border:1px solid #555; padding:6px 8px;">Kontrolowano</td><td style="border:1px solid #555; padding:6px 8px;">10 min / 15 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">2 ciąg</th><td style="border:1px solid #555; padding:6px 8px;">Osłuchano - szczelny</td><td style="border:1px solid #555; padding:6px 8px;">5 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">QET</th><td style="border:1px solid #555; padding:6px 8px;">Praca prawidłowa</td><td style="border:1px solid #555; padding:6px 8px;">5 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">HRS / HTJ</th><td style="border:1px solid #555; padding:6px 8px;">Kontrolowano</td><td style="border:1px solid #555; padding:6px 8px;">10 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">HFB</th><td style="border:1px solid #555; padding:6px 8px;">Naciąg łańcuchów zgrzebłowych b/u, oleje w/n</td><td style="border:1px solid #555; padding:6px 8px;">30 min - 1.25 h</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">HLD10</th><td style="border:1px solid #555; padding:6px 8px;">Praca prawidłowa, oleje w/n</td><td style="border:1px solid #555; padding:6px 8px;">10 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">HJA / HJF</th><td style="border:1px solid #555; padding:6px 8px;">Kontrolowano</td><td style="border:1px solid #555; padding:6px 8px;">10 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">LBH / BTG</th><td style="border:1px solid #555; padding:6px 8px;">Kontrolowano</td><td style="border:1px solid #555; padding:6px 8px;">5 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">ETD / HDA</th><td style="border:1px solid #555; padding:6px 8px;">Kontrolowano</td><td style="border:1px solid #555; padding:6px 8px;">10 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">QEH</th><td style="border:1px solid #555; padding:6px 8px;">Praca prawidłowa, oleje w/n</td><td style="border:1px solid #555; padding:6px 8px;">5 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">SCB</th><td style="border:1px solid #555; padding:6px 8px;">Kontrolowano b/u, odwodniono układ</td><td style="border:1px solid #555; padding:6px 8px;">10 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">HLB / HNC</th><td style="border:1px solid #555; padding:6px 8px;">Praca prawidłowa, oleje w/n + HLV / HNV</td><td style="border:1px solid #555; padding:6px 8px;">5 min / 10 min</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">IMOS</th><td style="border:1px solid #555; padding:6px 8px;">Kontrolowano</td><td style="border:1px solid #555; padding:6px 8px;">15 min - 1.20 h</td></tr>
+                <tr><td colspan="3" style="background:#f7dede; font-weight:bold; text-align:center; color:#aa0000; padding:6px 8px; border:1px solid #555;">2 obchód</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">K-5</th><td style="border:1px solid #555; padding:6px 8px;">Obchód kontrolny. Praca urządzeń w ruchu prawidłowa.</td><td style="border:1px solid #555; padding:6px 8px;">2 h</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">Sp.p.poż</th><td style="border:1px solid #555; padding:6px 8px;">Nie używano</td><td style="border:1px solid #555; padding:6px 8px;"></td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">Dokumentacja</th><td style="border:1px solid #555; padding:6px 8px;">Komplet przekazano zmianie 1, 2, 3</td><td style="border:1px solid #555; padding:6px 8px;"></td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">data</th><td style="border:1px solid #555; padding:6px 8px;">Zmianę przyjął: _________ &nbsp;&nbsp; Zmianę zdał: _________</td><td style="border:1px solid #555; padding:6px 8px;">godz. zako. zmiany</td></tr>
+                <tr><td colspan="3" style="background:#ffe8c4; font-weight:bold; text-align:center; color:#cc4a00; padding:6px 8px; border:1px solid #555;">KONTYNUACJA ZMIANY</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">data</th><td style="border:1px solid #555; padding:6px 8px;">Kontynuacja zmiany. Zmiana II od 14:00 do 18:00</td><td style="border:1px solid #555; padding:6px 8px;">14:00</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">K-5</th><td style="border:1px solid #555; padding:6px 8px;">W ruchu. Przyjęto zmianę. Przekazano KZB informacje<br>z poprzedniej zmiany. Przyjęto instruktaż BHP</td><td style="border:1px solid #555; padding:6px 8px;">14:15 (+15 min)</td></tr>
+                <tr><td colspan="3" style="background:#ffe8c4; font-weight:bold; text-align:center; color:#cc4a00; padding:6px 8px; border:1px solid #555;">WERSJA SKRÓCONA</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">data</th><td style="border:1px solid #555; padding:6px 8px;">Zmiana I od 14:00 do 18:00</td><td style="border:1px solid #555; padding:6px 8px;">14:00</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">K-5</th><td style="border:1px solid #555; padding:6px 8px;">W ruchu. Przyjęto zmianę. Przekazano KZB informacje<br>z poprzedniej zmiany. Przyjęto instruktaż BHP i p.poż.</td><td style="border:1px solid #555; padding:6px 8px;">14:15 (+15 min)</td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">ETD 10/20</th><td style="border:1px solid #555; padding:6px 8px;">Pobrano próbki do analizy</td><td style="border:1px solid #555; padding:6px 8px;"></td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">HAD10</th><td style="border:1px solid #555; padding:6px 8px;">L: -180 ; P:-160 Wodoswazy szczelne</td><td style="border:1px solid #555; padding:6px 8px;"></td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">W ruchu</th><td style="border:1px solid #555; padding:6px 8px;">HCB, SNCR, II-ciąg, QET, HFB, HTJ, HRS, HLD10, HJA, HJF, QEH, ETD, HDA, SCB, HLB/HLV, HNC/HNV, IMOS - kontrolowano</td><td style="border:1px solid #555; padding:6px 8px;"></td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">SCB</th><td style="border:1px solid #555; padding:6px 8px;">Odwodniono układ</td><td style="border:1px solid #555; padding:6px 8px;"></td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">Sp.p.poż</th><td style="border:1px solid #555; padding:6px 8px;">Nie używano</td><td style="border:1px solid #555; padding:6px 8px;"></td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">Dokumentacja</th><td style="border:1px solid #555; padding:6px 8px;">Komplet przekazano zmianie 1, 2, 3</td><td style="border:1px solid #555; padding:6px 8px;"></td></tr>
+                <tr><th style="border:1px solid #555; padding:6px 8px;">data</th><td style="border:1px solid #555; padding:6px 8px;">Zmianę przyjął: _________ &nbsp;&nbsp; Zmianę zdał: _________</td><td style="border:1px solid #555; padding:6px 8px;"></td></tr>
+            </table>
+            </div>
+        `;
+
+let notesDB = [];
+let dailyNotesDB = ["", "", "", "", "", "", ""];
+let quickNotesDB = []; 
+let isEditing = false;
+let editingId = null;
+let isWeekPanelActive = false;
+let currentEditImages = [];
+let editingDailyIndex = -1;
+let isQuickNoteMode = false;
+let editingQuickNoteIndex = -1; 
+let activeCategoryFilter = null; 
+const CATEGORIES = ["Turbina", "Turbina (obsługa)", "Kocioł", "Kocioł (obsługa)", "Kocioł (poziomy)"]; 
+let quickNoteTimerInterval = null;
+let currentScale = 1;
+let currentX = 0;
+let currentY = 0;
+let startX = 0;
+let startY = 0;
+let isDragging = false;
+let initialDistance = 0;
+const dayNames = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota", "Niedziela"];
+
+window.onload = function() {
+    loadFromStorage();
+    checkAndRemoveExpiredQuickNotes();
+    performSearch();
+    setupImageGestures();
+    renderTodayDailyNote();
+    document.getElementById('embedded-table-container').innerHTML = embeddedTableHTML;
+    const quickNoteBtn = document.getElementById('quick-note-btn');
+    if (quickNotesDB.length > 0) {
+        quickNoteBtn.classList.add('active');
+    } else {
+        quickNoteBtn.classList.remove('active');
+    }
+};
+
+function openZmianaFile() {
+    document.getElementById('watch-modal').style.display = 'flex';
+    const inner = document.getElementById('watch-modal-inner');
+    if (inner) inner.scrollTop = 0;
+}
+function closeWatchModal() { document.getElementById('watch-modal').style.display = 'none'; }
+
+function setupImageGestures() {
+    const img = document.getElementById('full-image');
+    const container = document.getElementById('image-viewer');
+    container.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (e.deltaY < 0) currentScale += 0.1;
+        else currentScale -= 0.1;
+        if (currentScale < 1) currentScale = 1;
+        updateTransform();
+    }, { passive: false });
+    container.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+            isDragging = true;
+            startX = e.touches[0].clientX - currentX;
+            startY = e.touches[0].clientY - currentY;
+        } else if (e.touches.length === 2) {
+            isDragging = false;
+            initialDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        }
+    });
+    container.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (e.touches.length === 1 && isDragging) {
+            currentX = e.touches[0].clientX - startX;
+            currentY = e.touches[0].clientY - startY;
+            updateTransform();
+        } else if (e.touches.length === 2) {
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            if (initialDistance > 0) {
+                const diff = dist - initialDistance;
+                currentScale += diff * 0.005;
+                if (currentScale < 1) currentScale = 1;
+                initialDistance = dist;
+                updateTransform();
+            }
+        }
+    }, { passive: false });
+    container.addEventListener('touchend', () => { isDragging = false; initialDistance = 0; });
+    img.addEventListener('mousedown', (e) => { isDragging = true; startX = e.clientX - currentX; startY = e.clientY - currentY; img.style.cursor = 'grabbing'; });
+    window.addEventListener('mousemove', (e) => { if (!isDragging) return; e.preventDefault(); currentX = e.clientX - startX; currentY = e.clientY - startY; updateTransform(); });
+    window.addEventListener('mouseup', () => { isDragging = false; img.style.cursor = 'grab'; });
+}
+function updateTransform() { const img = document.getElementById('full-image'); img.style.transform = `translate(${currentX}px, ${currentY}px) scale(${currentScale})`; }
+function openImageViewer(src) { const viewer = document.getElementById('image-viewer'); const fullImg = document.getElementById('full-image'); currentScale = 1; currentX = 0; currentY = 0; fullImg.style.transform = `translate(0px, 0px) scale(1)`; fullImg.src = src; viewer.style.display = 'flex'; }
+function closeImageViewer() { document.getElementById('image-viewer').style.display = 'none'; }
+
+function openSoupModal() { const imageUrl = 'https://mega-serwis.com.pl/wp-content/uploads/gastro/posilek.jpg'; closeCategoryPanel(); openImageViewer(imageUrl); }
+function openPhoneModal() { closeCategoryPanel(); document.getElementById('phone-modal').style.display = 'flex'; }
+function closePhoneModal() { document.getElementById('phone-modal').style.display = 'none'; }
+function triggerCall(number) { window.location.href = 'tel:' + number; }
+
+function toggleSettings() {
+    const panel = document.getElementById('settings-panel');
+    closeCategoryPanel();
+    panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
+    if (panel.style.display === 'block') { if (isWeekPanelActive) toggleWeekEditPanel(false); panel.focus(); }
+}
+
+function toggleCategoryPanel() {
+    const panel = document.getElementById('category-panel');
+    const isVisible = panel.style.display === 'block';
+    if (isVisible) panel.style.display = 'none';
+    else {
+        if (document.getElementById('settings-panel').style.display === 'block') toggleSettings();
+        if (document.getElementById('week-edit-panel').style.display === 'block') toggleWeekEditPanel(false);
+        if (document.getElementById('daily-modal').style.display === 'flex') closeDailyModal();
+        panel.style.display = 'block';
+    }
+}
+function closeCategoryPanel() { document.getElementById('category-panel').style.display = 'none'; }
+
+function filterByCategory(category, clickedButton) {
+    if (activeCategoryFilter === category) activeCategoryFilter = null;
+    else activeCategoryFilter = category;
+    const buttons = document.querySelectorAll('.category-btn-large');
+    buttons.forEach(btn => btn.classList.remove('active'));
+    if (activeCategoryFilter) clickedButton.classList.add('active');
+    performSearch();
+    if (!activeCategoryFilter) closeCategoryPanel(); 
+}
+
+function renderTodayDailyNote() {
+    const container = document.getElementById('today-daily-note-container');
+    const todayIndex = (new Date().getDay() + 6) % 7;
+    const dayName = dayNames[todayIndex];
+    const noteContent = dailyNotesDB[todayIndex] || "Brak notatki na dziś. Kliknij '📝', aby edytować.";
+    container.innerHTML = `<div class="day-center-title">${dayName}</div><div class="note-row"><div class="note-content"></div></div>`;
+    container.querySelector('.note-content').textContent = noteContent;
+    container.style.display = 'block';
+}
+
+function openDailyModal(dayIndex) {
+    closeCategoryPanel();
+    isQuickNoteMode = false;
+    editingDailyIndex = dayIndex;
+    editingQuickNoteIndex = -1;
+    document.getElementById('quick-note-list').style.display = 'none';
+    document.getElementById('quick-note-input').style.display = 'none';
+    document.getElementById('quick-note-info').style.display = 'none';
+    document.getElementById('daily-note-text').style.display = 'block';
+    stopQuickNoteTimer();
+    document.getElementById('daily-modal-title').innerText = `Notatka na ${dayNames[dayIndex]}`;
+    document.getElementById('daily-modal-label').innerText = `Treść notatki:`;
+    document.getElementById('daily-note-text').value = dailyNotesDB[dayIndex] || "";
+    document.getElementById('daily-modal-save-btn').innerText = 'Zapisz Dzień';
+    document.getElementById('daily-modal').style.display = 'flex';
+    if (isWeekPanelActive) toggleWeekEditPanel(false);
+}
+function closeDailyModal() {
+    editingDailyIndex = -1;
+    isQuickNoteMode = false;
+    editingQuickNoteIndex = -1;
+    document.getElementById('daily-modal').style.display = 'none';
+    stopQuickNoteTimer();
+    document.getElementById('quick-note-list').style.display = 'none';
+    document.getElementById('quick-note-input').style.display = 'none';
+    document.getElementById('quick-note-info').style.display = 'none';
+    document.getElementById('daily-note-text').style.display = 'block';
+    if (quickNotesDB.length > 0) document.getElementById('quick-note-btn').classList.add('active');
+    else document.getElementById('quick-note-btn').classList.remove('active');
+}
+
+function formatTimestamp(timestamp) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    const duration = 8 * 60 * 60 * 1000;
+    const timePassed = Date.now() - timestamp;
+    const timeLeft = duration - timePassed;
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const creationTime = `Utw.: ${hours}:${minutes}`;
+    if (timeLeft <= 0) return `${creationTime} | Wygasła`;
+    else {
+        const h = Math.floor(timeLeft / (1000 * 60 * 60));
+        const m = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+        const s = Math.floor((timeLeft % (1000 * 60)) / 1000);
+        return `${creationTime} | Pozostało: ${h}h ${m}m ${s}s`;
+    }
+}
+function refreshQuickNoteTimers() {
+    const countdownElements = document.querySelectorAll('.quick-note-countdown');
+    let hasExpired = false;
+    countdownElements.forEach(el => {
+        const timestamp = parseInt(el.dataset.timestamp);
+        if (!isNaN(timestamp)) {
+            el.innerText = formatTimestamp(timestamp);
+            if (Date.now() - timestamp >= 8 * 60 * 60 * 1000) hasExpired = true;
+        }
+    });
+    if (hasExpired) checkAndRemoveExpiredQuickNotes(true);
+}
+function startQuickNoteTimer() { if (quickNoteTimerInterval === null) quickNoteTimerInterval = setInterval(refreshQuickNoteTimers, 1000); }
+function stopQuickNoteTimer() { if (quickNoteTimerInterval !== null) { clearInterval(quickNoteTimerInterval); quickNoteTimerInterval = null; } }
+
+function renderQuickNoteList() {
+    const list = document.getElementById('quick-note-list');
+    list.innerHTML = '';
+    if (quickNotesDB.length === 0) {
+        const item = document.createElement('li');
+        item.className = 'quick-note-item';
+        item.style.justifyContent = 'center';
+        item.style.color = '#777';
+        item.innerText = 'Brak szybkich notatek.';
+        list.appendChild(item);
+        document.getElementById('quick-note-btn').classList.remove('active');
+        stopQuickNoteTimer();
+    } else {
+        quickNotesDB.forEach((noteObj, index) => {
+            const item = document.createElement('li');
+            item.className = 'quick-note-item';
+            const contentDiv = document.createElement('div');
+            contentDiv.style.flexGrow = 1;
+            const textSpan = document.createElement('span');
+            textSpan.innerText = noteObj.text;
+            const timestampSpan = document.createElement('span');
+            timestampSpan.className = 'quick-note-timestamp quick-note-countdown';
+            timestampSpan.dataset.timestamp = noteObj.timestamp;
+            timestampSpan.innerText = formatTimestamp(noteObj.timestamp);
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-quick-note-btn';
+            deleteBtn.innerText = '🗑️';
+            deleteBtn.onclick = () => deleteQuickNote(index);
+            const editBtn = document.createElement('button');
+            editBtn.className = 'btn-blue';
+            editBtn.innerText = '✏️';
+            editBtn.onclick = () => openQuickNoteForEdit(index);
+            const actionContainer = document.createElement('div');
+            actionContainer.style.display = 'flex';
+            actionContainer.style.alignItems = 'center';
+            actionContainer.appendChild(editBtn);
+            actionContainer.appendChild(deleteBtn);
+            contentDiv.appendChild(textSpan);
+            contentDiv.appendChild(timestampSpan);
+            item.appendChild(contentDiv);
+            item.appendChild(actionContainer);
+            list.appendChild(item);
+        });
+        document.getElementById('quick-note-btn').classList.add('active');
+        startQuickNoteTimer();
+    }
+}
+
+function openQuickNoteForEdit(index) {
+    if (index < 0 || index >= quickNotesDB.length) return;
+    closeCategoryPanel();
+    isQuickNoteMode = true;
+    editingQuickNoteIndex = index;
+    editingDailyIndex = -1;
+    stopQuickNoteTimer();
+    document.getElementById('daily-modal-title').innerText = `Edytuj Szybką Notatkę`;
+    document.getElementById('daily-modal-label').innerText = `Treść notatki:`;
+    document.getElementById('quick-note-list').style.display = 'none';
+    document.getElementById('quick-note-input').style.display = 'block';
+    document.getElementById('quick-note-info').style.display = 'none';
+    document.getElementById('daily-note-text').style.display = 'none';
+    document.getElementById('quick-note-input').value = quickNotesDB[index].text;
+    document.getElementById('daily-modal-save-btn').innerText = 'Zapisz Zmiany';
+    document.getElementById('daily-modal').style.display = 'flex';
+    if (isWeekPanelActive) toggleWeekEditPanel(false);
+}
+
+function toggleQuickNoteModal() {
+    const modal = document.getElementById('daily-modal');
+    closeCategoryPanel();
+    if (modal.style.display === 'flex' && isQuickNoteMode) closeDailyModal();
+    else {
+        if (modal.style.display === 'flex' && !isQuickNoteMode) closeDailyModal();
+        isQuickNoteMode = true;
+        editingDailyIndex = -1;
+        editingQuickNoteIndex = -1;
+        document.getElementById('daily-modal-title').innerText = `Szybkie Notatki`;
+        document.getElementById('daily-modal-label').innerText = `Dodaj nową notatkę:`;
+        document.getElementById('quick-note-list').style.display = 'block';
+        document.getElementById('quick-note-input').style.display = 'block';
+        document.getElementById('quick-note-info').style.display = 'block';
+        document.getElementById('daily-note-text').style.display = 'none';
+        document.getElementById('quick-note-input').value = '';
+        document.getElementById('daily-modal-save-btn').innerText = 'Dodaj Notatkę';
+        modal.style.display = 'flex';
+        if (isWeekPanelActive) toggleWeekEditPanel(false);
+        renderQuickNoteList();
+    }
+}
+
+function handleDailyOrQuickSave() { if (isQuickNoteMode) handleSaveQuickNote(); else handleSaveDaily(); }
+function handleSaveDaily() {
+    if (editingDailyIndex === -1) { closeDailyModal(); return; }
+    const text = document.getElementById('daily-note-text').value.trim();
+    dailyNotesDB[editingDailyIndex] = text;
+    if (saveToStorage()) {
+        alert(`Zapisano notatkę na ${dayNames[editingDailyIndex]}!`);
+        const todayIndex = (new Date().getDay() + 6) % 7;
+        if (editingDailyIndex === todayIndex) renderTodayDailyNote();
+        closeDailyModal();
+    }
+}
+
+function handleSaveQuickNote() {
+    const quickInput = document.getElementById('quick-note-input');
+    const text = quickInput.value.trim();
+    if (text.length > 0) {
+        if (editingQuickNoteIndex !== -1) {
+            const oldText = quickNotesDB[editingQuickNoteIndex].text;
+            if (text.toLowerCase() !== oldText.toLowerCase()) {
+                const exists = quickNotesDB.some((noteObj, index) => index !== editingQuickNoteIndex && noteObj.text.toLowerCase() === text.toLowerCase());
+                if (exists) { alert("Ta szybka notatka już istnieje!"); return; }
+            }
+            quickNotesDB[editingQuickNoteIndex].text = text;
+            if (saveToStorage()) {
+                editingQuickNoteIndex = -1;
+                document.getElementById('daily-modal-title').innerText = `Szybkie Notatki`;
+                document.getElementById('daily-modal-label').innerText = `Dodaj nową notatkę:`;
+                document.getElementById('quick-note-list').style.display = 'block';
+                document.getElementById('quick-note-input').value = '';
+                document.getElementById('daily-modal-save-btn').innerText = 'Dodaj Notatkę';
+                document.getElementById('quick-note-info').style.display = 'block';
+                renderQuickNoteList();
+            }
+        } else {
+            const exists = quickNotesDB.some(noteObj => noteObj.text.toLowerCase() === text.toLowerCase());
+            if (!exists) {
+                const newNote = { text: text, timestamp: Date.now() };
+                quickNotesDB.push(newNote);
+                if (saveToStorage()) { quickInput.value = ''; renderQuickNoteList(); document.getElementById('quick-note-btn').classList.add('active'); }
+                else quickNotesDB.pop();
+            } else alert("Ta szybka notatka już istnieje!");
+        }
+    } else alert("Wpisz treść szybkiej notatki.");
+}
+
+function deleteQuickNote(index) {
+    if (confirm("Czy na pewno chcesz usunąć tę szybką notatkę?")) {
+        quickNotesDB.splice(index, 1);
+        if (saveToStorage()) {
+            if (document.getElementById('daily-modal').style.display === 'flex' && isQuickNoteMode) renderQuickNoteList();
+            if (quickNotesDB.length === 0) { document.getElementById('quick-note-btn').classList.remove('active'); document.getElementById('quick-note-info').style.display = 'none'; }
+        }
+    }
+}
+
+function checkAndRemoveExpiredQuickNotes(reRender = false) {
+    const initialCount = quickNotesDB.length;
+    const expirationTime = 8 * 60 * 60 * 1000;
+    const newQuickNotesDB = quickNotesDB.filter(noteObj => { if (!noteObj.timestamp) return true; return (Date.now() - noteObj.timestamp) < expirationTime; });
+    if (newQuickNotesDB.length !== initialCount) {
+        quickNotesDB = newQuickNotesDB;
+        saveToStorage();
+        const quickNoteBtn = document.getElementById('quick-note-btn');
+        if (quickNotesDB.length > 0) quickNoteBtn.classList.add('active');
+        else quickNoteBtn.classList.remove('active');
+        if (reRender && isQuickNoteMode) renderQuickNoteList();
+    }
+}
+
+function toggleWeekEditPanel(forceState) {
+    const panel = document.getElementById('week-edit-panel');
+    if (forceState !== undefined) isWeekPanelActive = forceState;
+    else isWeekPanelActive = !isWeekPanelActive;
+    if (isWeekPanelActive) {
+        closeCategoryPanel();
+        panel.style.display = 'block';
+        if (document.getElementById('settings-panel').style.display === 'block') toggleSettings();
+        if (document.getElementById('daily-modal').style.display === 'flex') closeDailyModal();
+        renderWeekEditPanel();
+    } else panel.style.display = 'none';
+}
+function renderWeekEditPanel() {
+    const panel = document.getElementById('week-edit-panel');
+    panel.innerHTML = '<h3 style="margin-top:0; color: white;">Edytuj notatki tygodniowe:</h3>';
+    dayNames.forEach((day, index) => {
+        const noteContent = dailyNotesDB[index] || "Brak notatki.";
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'day-edit-item';
+        const textSpan = document.createElement('span');
+        let displayNote = noteContent.length > 50 ? noteContent.substring(0, 50) + '...' : noteContent;
+        textSpan.innerHTML = `<strong>${day}:</strong> ${displayNote}`;
+        const editBtn = document.createElement('button');
+        editBtn.className = 'edit-btn-small';
+        editBtn.innerText = 'Edytuj';
+        editBtn.onclick = () => openDailyModal(index);
+        itemDiv.appendChild(textSpan);
+        itemDiv.appendChild(editBtn);
+        panel.appendChild(itemDiv);
+    });
+}
+
+function loadFromStorage() {
+    const savedNotes = localStorage.getItem('myNotesDB');
+    if (savedNotes) { try { notesDB = JSON.parse(savedNotes); } catch (e) { notesDB = []; } }
+    const savedDaily = localStorage.getItem('myDailyNotesDB');
+    if (savedDaily) { try { dailyNotesDB = JSON.parse(savedDaily); } catch (e) { dailyNotesDB = ["", "", "", "", "", "", ""]; } }
+    if (!Array.isArray(dailyNotesDB) || dailyNotesDB.length !== 7) dailyNotesDB = ["", "", "", "", "", "", ""];
+    const savedQuickNotes = localStorage.getItem('myQuickNotesDB');
+    if (savedQuickNotes) {
+        try {
+            let loaded = JSON.parse(savedQuickNotes);
+            if (Array.isArray(loaded)) {
+                quickNotesDB = loaded.map(item => { if (typeof item === 'string') return { text: item, timestamp: Date.now() }; return item; });
+            } else quickNotesDB = [];
+        } catch (e) { quickNotesDB = []; }
+    }
+    if (!Array.isArray(quickNotesDB)) quickNotesDB = [];
+}
+function saveToStorage() {
+    try {
+        localStorage.setItem('myNotesDB', JSON.stringify(notesDB));
+        localStorage.setItem('myDailyNotesDB', JSON.stringify(dailyNotesDB));
+        localStorage.setItem('myQuickNotesDB', JSON.stringify(quickNotesDB));
+        return true;
+    } catch (e) { alert("BŁĄD ZAPISU! Pamięć przeglądarki pełna."); return false; }
+}
+
+function exportAllNotes() {
+    const dataToExport = { notes: notesDB, dailyNotes: dailyNotesDB, quickNotes: quickNotesDB };
+    if (notesDB.length === 0 && dailyNotesDB.every(n => n === "") && quickNotesDB.length === 0) { alert("Brak notatek do eksportu."); return; }
+    const dataStr = JSON.stringify(dataToExport);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    const date = new Date();
+    const fileName = 'TWB kopia ${date}.json';
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', fileName);
+    document.body.appendChild(linkElement);
+    linkElement.click();
+    document.body.removeChild(linkElement);
+}
+function exportSingleNote(id) {
+    const note = notesDB.find(n => n.id === id);
+    if (!note) return;
+    const dataStr = JSON.stringify(note);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    let safeTitle = note.title ? note.title.replace(/[^a-z0-9żźćńółęśą\s-]/gi, '_') : 'notatka';
+    const fileName = (safeTitle.trim() || 'notatka') + '.json';
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', fileName);
+    document.body.appendChild(linkElement);
+    linkElement.click();
+    document.body.removeChild(linkElement);
+}
+function triggerImport() { document.getElementById('import-file-input').click(); }
+function importData(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const importedData = JSON.parse(e.target.result);
+            let importedNotes = [];
+            let importedDaily = ["", "", "", "", "", "", ""];
+            let importedQuickNotes = [];
+            if (importedData.notes) {
+                importedNotes = importedData.notes;
+                importedDaily = importedData.dailyNotes || ["", "", "", "", "", "", ""];
+                let quickNotesRaw = importedData.quickNotes || (importedData.quickNote ? [importedData.quickNote] : []);
+                if (Array.isArray(importedData.quickNotes)) quickNotesRaw = importedData.quickNotes;
+                importedQuickNotes = quickNotesRaw.map(item => { if (typeof item === 'string') return { text: item, timestamp: Date.now() }; return item; });
+            } else if (Array.isArray(importedData)) importedNotes = importedData;
+            else if (typeof importedData === 'object' && importedData !== null) importedNotes = [importedData];
+            if (importedNotes.length > 0 || importedDaily.some(n => n !== "") || importedQuickNotes.length > 0) {
+                let msg = confirm("Czy chcesz dodać notatki do obecnych? (OK = Dodaj, Anuluj = Zastąp wszystko)");
+                if(msg) {
+                    notesDB = notesDB.concat(importedNotes.map(item => ({...item, id: Date.now() + Math.random()})));
+                    importedDaily.forEach((note, index) => { if (note.trim().length > 0) dailyNotesDB[index] = note; });
+                    importedQuickNotes.forEach(qNote => { if (qNote.text.length > 0 && !quickNotesDB.some(n => n.text === qNote.text)) quickNotesDB.push({ text: qNote.text, timestamp: qNote.timestamp || Date.now() }); });
+                } else { notesDB = importedNotes; dailyNotesDB = importedDaily; quickNotesDB = importedQuickNotes; }
+                if (quickNotesDB.length > 0) document.getElementById('quick-note-btn').classList.add('active');
+                else document.getElementById('quick-note-btn').classList.remove('active');
+                if (saveToStorage()) { alert("Zaimportowano pomyślnie!"); document.getElementById('settings-panel').style.display = 'none'; performSearch(); renderTodayDailyNote(); }
+            } else alert("Plik nie zawiera poprawnych danych.");
+        } catch (err) { alert("Błąd odczytu pliku."); }
+    };
+    reader.readAsText(file);
+    input.value = '';
+}
+function convertFileToBase64(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = error => reject(error); reader.readAsDataURL(file); }); }
+
+function openModalForNew() {
+    closeCategoryPanel();
+    isEditing = false; editingId = null; currentEditImages = []; renderEditImagesPreview();
+    document.getElementById('modal-title').innerText = "Nowa notatka";
+    document.getElementById('modal-save-btn').innerText = "Zapisz";
+    document.getElementById('note-title').value = '';
+    document.getElementById('note-text').value = '';
+    document.getElementById('note-labels').value = '';
+    document.getElementById('note-category-select').value = '';
+    document.getElementById('note-images').value = '';
+    document.getElementById('error-msg').innerText = '';
+    document.getElementById('modal').style.display = 'flex';
+}
+function openModalForEdit(id) {
+    closeCategoryPanel();
+    const note = notesDB.find(n => n.id === id);
+    if (!note) return;
+    isEditing = true; editingId = id; currentEditImages = note.images ? [...note.images] : []; renderEditImagesPreview();
+    document.getElementById('modal-title').innerText = "Edytuj";
+    document.getElementById('modal-save-btn').innerText = "Zapisz zmiany";
+    document.getElementById('note-title').value = note.title || '';
+    document.getElementById('note-text').value = note.text || '';
+    let locationString = '', categoryString = '';
+    if (note.labels && note.labels.length > 0) {
+        locationString = note.labels.find(label => !CATEGORIES.includes(label)) || '';
+        categoryString = note.labels.find(label => CATEGORIES.includes(label)) || '';
+    }
+    document.getElementById('note-labels').value = locationString;
+    document.getElementById('note-category-select').value = categoryString;
+    document.getElementById('note-images').value = '';
+    document.getElementById('error-msg').innerText = '';
+    document.getElementById('modal').style.display = 'flex';
+}
+function renderEditImagesPreview() {
+    const container = document.getElementById('edit-images-preview');
+    container.innerHTML = '';
+    currentEditImages.forEach((imgSrc, index) => {
+        const wrapper = document.createElement('div'); wrapper.className = 'modal-image-item';
+        const img = document.createElement('img'); img.src = imgSrc; img.onclick = () => openImageViewer(imgSrc);
+        const btn = document.createElement('button'); btn.className = 'remove-img-btn'; btn.innerHTML = '&times;'; btn.onclick = () => removeImageFromEdit(index);
+        wrapper.appendChild(img); wrapper.appendChild(btn); container.appendChild(wrapper);
+    });
+}
+function removeImageFromEdit(index) { currentEditImages.splice(index, 1); renderEditImagesPreview(); }
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+async function handleSave() {
+    const title = document.getElementById('note-title').value;
+    const text = document.getElementById('note-text').value;
+    const locationStr = document.getElementById('note-labels').value.trim();
+    const categoryStr = document.getElementById('note-category-select').value;
+    const files = document.getElementById('note-images').files;
+    if (title.trim() === "" && text.trim() === "" && locationStr === "" && categoryStr === "" && currentEditImages.length === 0 && files.length === 0) { document.getElementById('error-msg').innerText = "Wpisz coś, dodaj lokalizację/kategorię lub zdjęcie."; return; }
+    if (currentEditImages.length + files.length > 6) { document.getElementById('error-msg').innerText = `Limit 6 zdjęć!`; return; }
+    const saveBtn = document.getElementById('modal-save-btn');
+    saveBtn.disabled = true;
+    let finalImages = [...currentEditImages], ocrText = "";
+    let labelsToSave = [];
+    if (locationStr.length > 0) labelsToSave.push(locationStr); 
+    if (categoryStr.length > 0) labelsToSave.push(categoryStr);
+    if (isEditing) { const oldNote = notesDB.find(n => n.id === editingId); ocrText = oldNote ? (oldNote.ocrText || "") : ""; }
+    const finalLabels = Array.from(new Set(labelsToSave)).filter(l => l.length > 0);
+    try {
+        if (files.length > 0) {
+            const promises = Array.from(files).map(file => convertFileToBase64(file));
+            const newImages = await Promise.all(promises);
+            finalImages = finalImages.concat(newImages);
+            for (let i = 0; i < newImages.length; i++) {
+                saveBtn.innerText = `OCR: ${i+1}/${newImages.length}...`;
+                try { const result = await Tesseract.recognize(newImages[i], 'pol'); if (result.data.text.trim().length > 0) ocrText += ` [Obraz ${i+1}]: ` + result.data.text + "\n"; } catch (ocrErr) { console.error(ocrErr); }
+            }
+        }
+        if (isEditing) {
+            const index = notesDB.findIndex(n => n.id === editingId);
+            if (index !== -1) { notesDB[index].title = title; notesDB[index].text = text; notesDB[index].images = finalImages; notesDB[index].labels = finalLabels; notesDB[index].ocrText = ocrText; }
+        } else { notesDB.push({ id: Date.now(), title, text, images: finalImages, ocrText, labels: finalLabels }); }
+        if (saveToStorage()) { alert("Zapisano!"); closeModal(); performSearch(); }
+    } catch (err) { console.error(err); }
+    finally { saveBtn.innerText = "Zapisz"; saveBtn.disabled = false; }
+}
+function deleteNote(id) { if (confirm("Usunąć?")) { notesDB = notesDB.filter(n => n.id !== id); saveToStorage(); performSearch(); } }
+
+function highlightText(text, query) { if (!query || query.trim() === "") return text; const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'); return text.replace(regex, '<mark>$1</mark>'); }
+function renderNotes(notesList) {
+    const displayArea = document.getElementById('display-area');
+    displayArea.innerHTML = '';
+    const rawQuery = document.getElementById('search-input').value;
+    const query = activeCategoryFilter ? activeCategoryFilter : (rawQuery ? rawQuery.toLowerCase() : '');
+    if (notesList.length === 0) { displayArea.innerHTML = query ? '<div style="opacity: 0.8;">Brak wyników.</div>' : '<div style="opacity: 0.8;">Brak notatek.</div>'; return; }
+    notesList.forEach(note => {
+        const noteCard = document.createElement('div'); noteCard.className = 'note-card';
+        const actionsDiv = document.createElement('div'); actionsDiv.className = 'card-actions';
+        const exportOneBtn = document.createElement('button'); exportOneBtn.className = 'btn-purple'; exportOneBtn.innerText = '💾'; exportOneBtn.onclick = () => exportSingleNote(note.id);
+        const editBtn = document.createElement('button'); editBtn.className = 'edit-btn'; editBtn.innerText = 'Edytuj'; editBtn.onclick = () => openModalForEdit(note.id);
+        const deleteBtn = document.createElement('button'); deleteBtn.className = 'delete-btn'; deleteBtn.innerText = 'Usuń'; deleteBtn.onclick = () => deleteNote(note.id);
+        actionsDiv.append(exportOneBtn, editBtn, deleteBtn); noteCard.appendChild(actionsDiv);
+        if (note.title) { const titleDiv = document.createElement('div'); titleDiv.className = 'note-title'; titleDiv.innerHTML = highlightText(note.title, query); noteCard.appendChild(titleDiv); }
+        if (note.labels && note.labels.length > 0) {
+            const tagContainer = document.createElement('div'); tagContainer.className = 'tag-container';
+            let catL = note.labels.find(lbl => CATEGORIES.includes(lbl)), locL = note.labels.find(lbl => !CATEGORIES.includes(lbl));
+            [catL, locL].forEach(lbl => {
+                if(!lbl) return;
+                const chip = document.createElement('div'); chip.className = 'tag-chip';
+                if (CATEGORIES.includes(lbl)) {
+                    if (lbl.startsWith('Kocioł')) { chip.style.backgroundColor = '#007BFF'; chip.style.color = 'white'; }
+                    else if (lbl.startsWith('Turbina')) { chip.style.backgroundColor = '#FF9800'; chip.style.color = 'white'; }
+                }
+                chip.innerHTML = highlightText(lbl, query); tagContainer.appendChild(chip);
+            });
+            noteCard.appendChild(tagContainer);
+        }
+        const contentWrapper = document.createElement('div'); contentWrapper.className = 'note-content-wrapper';
+        if (note.images && note.images.length > 0) {
+            const imagesDiv = document.createElement('div'); imagesDiv.className = 'note-images';
+            note.images.forEach(imgSrc => { const img = document.createElement('img'); img.src = imgSrc; img.onclick = () => openImageViewer(imgSrc); imagesDiv.appendChild(img); });
+            contentWrapper.appendChild(imagesDiv);
+        }
+        const textDiv = document.createElement('div'); textDiv.className = 'note-text'; textDiv.innerHTML = highlightText(note.text || '', query); contentWrapper.appendChild(textDiv);
+        if (note.ocrText) { const ocrDiv = document.createElement('div'); ocrDiv.className = 'ocr-text'; ocrDiv.innerHTML = 'OCR: ' + highlightText(note.ocrText.replace(/\n/g, ' '), query); contentWrapper.appendChild(ocrDiv); }
+        noteCard.appendChild(contentWrapper); displayArea.appendChild(noteCard);
+    });
+}
+function performSearch() {
+    // === SORT: ALFABETYCZNIE, POTEM LICZBY MALEJĄCO ===
+    notesDB.sort((a, b) => {
+        const getText = t => t.title.toLowerCase().replace(/\d+/g, '').trim();
+        const getNum = t => {
+            const m = t.title.match(/\d+/);
+            return m ? parseInt(m[0], 10) : null;
+        };
+
+        const ta = getText(a);
+        const tb = getText(b);
+
+        const textCompare = ta.localeCompare(tb, 'pl', { sensitivity: 'base' });
+        if (textCompare !== 0) return textCompare;
+
+        const na = getNum(a);
+        const nb = getNum(b);
+
+        if (na !== null && nb !== null) return nb - na;
+        if (na !== null) return -1;
+        if (nb !== null) return 1;
+        return 0;
+    });
+
+    const query = document.getElementById('search-input').value.toLowerCase();
+    const dailyBox = document.getElementById('today-daily-note-container');
+    const searchContainer = document.getElementById('search-container');
+    const categoryPanel = document.getElementById('category-panel');
+    if (query.trim().length > 0 || activeCategoryFilter !== null) dailyBox.style.display = 'none';
+    else dailyBox.style.display = 'block';
+    if (activeCategoryFilter !== null) { searchContainer.style.display = 'none'; document.getElementById('search-input').value = ''; if (categoryPanel.style.display !== 'block') categoryPanel.style.display = 'block'; }
+    else { searchContainer.style.display = 'flex'; categoryPanel.style.display = 'none'; }
+    let notesToRender = [];
+    if (activeCategoryFilter !== null) { notesToRender = notesDB.filter(note => (note.labels || []).map(l => l.toLowerCase()).includes(activeCategoryFilter.toLowerCase())); }
+    else if (query.trim().length === 0) { notesToRender = notesDB; }
+    else { notesToRender = notesDB.filter(note => {
+        return (note.title || '').toLowerCase().includes(query) || (note.text || '').toLowerCase().includes(query) || (note.ocrText || '').toLowerCase().includes(query) || (note.labels || []).map(l => l.toLowerCase()).some(l => l.includes(query));
+    }); }
+    renderNotes(notesToRender);
+}
+document.getElementById('search-input').addEventListener('keypress', function (e) { if (e.key === 'Enter') { e.target.blur(); } });
+
+document.addEventListener("DOMContentLoaded", function () {
+    const settingsPanel = document.getElementById("settings-panel"), categoryPanel = document.getElementById('category-panel');
+    if (!settingsPanel) return;
+    let settingsHideTimeout = null;
+    function hideSettings() { settingsPanel.style.display = "none"; }
+    function resetSettingsTimeout() { clearTimeout(settingsHideTimeout); settingsHideTimeout = setTimeout(() => { hideSettings(); }, 2000); }
+    document.addEventListener("click", function (e) {
+        if (!settingsPanel.contains(e.target) && !e.target.closest("[onclick='toggleSettings()']")) hideSettings();
+        else if (settingsPanel.contains(e.target)) resetSettingsTimeout();
+        if (categoryPanel.style.display === 'block' && !categoryPanel.contains(e.target) && !e.target.closest("[onclick='toggleCategoryPanel()']")) categoryPanel.style.display = 'none';
+    });
+    document.addEventListener("scroll", function (e) { hideSettings(); if (!document.getElementById('display-area').contains(e.target)) categoryPanel.style.display = 'none'; }, true);
+    document.getElementById("search-input").addEventListener("focus", () => { hideSettings(); categoryPanel.style.display = 'none'; });
+});
+
+document.addEventListener("click", function (e) {
+    const weekPanel = document.getElementById("week-edit-panel");
+    if (weekPanel && weekPanel.style.display === "block" && !weekPanel.contains(e.target) && !e.target.closest("[onclick='toggleWeekEditPanel()']")) toggleWeekEditPanel(false);
+});
+
+/* === AUTO PATCH: ROZWIJANIE NOTATKI DZIENNEJ DO CAŁEGO TYGODNIA === */
+let isDailyExpanded = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const dailyContainer = document.getElementById('today-daily-note-container');
+    if (!dailyContainer) return;
+
+    dailyContainer.addEventListener('click', () => {
+        isDailyExpanded = !isDailyExpanded;
+        renderDailyExpanded();
+    });
+});
+
+function renderDailyExpanded() {
+    const container = document.getElementById('today-daily-note-container');
+    if (!container) return;
+
+    if (!isDailyExpanded) {
+        renderTodayDailyNote();
+        return;
+    }
+
+    let html = '<div class="day-center-title">Tydzień</div>';
+    dayNames.forEach((day, index) => {
+        const content = dailyNotesDB[index] || 'Brak notatki.';
+        html += `
+            <div style="border-top:1px solid #777; padding:4px 0;">
+                <strong style="font-size:12px;">${day}</strong>
+                <div style="white-space:pre-wrap; font-size:13px; line-height:1.25;">
+                    ${content}
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+
+/* === AUTO PATCH: NADPISANIE renderDailyExpanded (KOMPAKT) === */
+renderDailyExpanded = function () {
+    const container = document.getElementById('today-daily-note-container');
+    if (!container) return;
+
+    if (!isDailyExpanded) {
+        renderTodayDailyNote();
+        return;
+    }
+
+    let html = '<div class="day-center-title">Tydzień</div>';
+    dayNames.forEach((day, index) => {
+        const content = dailyNotesDB[index] || '—';
+        html += `
+            <div class="week-day">
+                <strong>${day}</strong>
+                <div class="week-content">${content}</div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+};
+
+</script>
+
+<script>
+document.addEventListener('deviceready', () => {
+  document.addEventListener('backbutton', function (e) {
+    e.preventDefault();
+
+    const modals = ['modal','daily-modal','watch-modal','phone-modal','image-viewer'];
+    for (const id of modals) {
+      const el = document.getElementById(id);
+      if (el && (el.style.display === 'flex' || el.style.display === 'block')) {
+        el.style.display = 'none';
+        return;
+      }
+    }
+
+    const panels = ['settings-panel','category-panel','week-edit-panel'];
+    for (const id of panels) {
+      const el = document.getElementById(id);
+      if (el && el.style.display === 'block') {
+        el.style.display = 'none';
+        return;
+      }
+    }
+
+    // intentionally block app exit
+  }, false);
+});
+</script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js");
+}
+</script>
+
+</body>
+</html>
