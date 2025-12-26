@@ -1945,5 +1945,66 @@ if ("serviceWorker" in navigator) {
 }
 </script>
 
+
+<script>
+/* === INDEXEDDB STORAGE LAYER (AUTO PATCH) === */
+const DB_NAME = "twb-db";
+const DB_VERSION = 1;
+const STORE = "data";
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE)) {
+        db.createObjectStore(STORE);
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function idbSet(key, value) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).put(value, key);
+    tx.oncomplete = () => res();
+    tx.onerror = e => rej(e.target.error);
+  });
+}
+
+async function idbGet(key) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, "readonly");
+    const req = tx.objectStore(STORE).get(key);
+    req.onsuccess = () => res(req.result);
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
+/* === OVERRIDE STORAGE FUNCTIONS === */
+async function saveToStorage() {
+  try {
+    await idbSet("notesDB", notesDB);
+    await idbSet("dailyNotesDB", dailyNotesDB);
+    await idbSet("quickNotesDB", quickNotesDB);
+    return true;
+  } catch (e) {
+    alert("Błąd zapisu IndexedDB");
+    return false;
+  }
+}
+
+async function loadFromStorage() {
+  notesDB = (await idbGet("notesDB")) || [];
+  dailyNotesDB = (await idbGet("dailyNotesDB")) || ["","","","","","",""];
+  quickNotesDB = (await idbGet("quickNotesDB")) || [];
+}
+</script>
+
 </body>
 </html>
